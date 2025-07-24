@@ -1,4 +1,6 @@
 # System requirements
+USE DOCKER!!!
+
 python 3.9
 CUDA 12.1
 pytorch 2.1.0
@@ -73,8 +75,10 @@ year          = {2023},
 
 # Env setup option 1: docker (recommended)
   ```
-  cd docker/
-  docker pull wenbowen123/foundationpose && docker tag wenbowen123/foundationpose foundationpose  # Or to build from scratch: docker build --network host -t foundationpose .
+  # cd docker/
+  # docker pull wenbowen123/foundationpose && docker tag wenbowen123/foundationpose foundationpose  # Or to build from scratch: docker build --network host -t foundationpose .
+  docker pull shingarey/foundationpose_custom_cuda121:latest
+  docker tag shingarey/foundationpose_custom_cuda121 foundationpose
   bash docker/run_container.sh
   ```
 
