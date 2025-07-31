@@ -1,10 +1,6 @@
 # System requirements
 USE DOCKER!!!
 
-python 3.9
-CUDA 12.1
-pytorch 2.1.0
-
 # FoundationPose: Unified 6D Pose Estimation and Tracking of Novel Objects
 [[Paper]](https://arxiv.org/abs/2312.08344) [[Website]](https://nvlabs.github.io/FoundationPose/)
 
@@ -74,9 +70,9 @@ year          = {2023},
 1) [Optional] Download our preprocessed reference views [here](https://drive.google.com/drive/folders/1PXXCOJqHXwQTbwPwPbGDN9_vLVe0XpFS?usp=sharing) in order to run model-free few-shot version.
 
 # Env setup option 1: docker (recommended)
+  > **Note**
+  > This is only for a Nvidia RTX 40xx user!
   ```
-  # cd docker/
-  # docker pull wenbowen123/foundationpose && docker tag wenbowen123/foundationpose foundationpose  # Or to build from scratch: docker build --network host -t foundationpose .
   docker pull shingarey/foundationpose_custom_cuda121:latest
   docker tag shingarey/foundationpose_custom_cuda121 foundationpose
   bash docker/run_container.sh
@@ -88,49 +84,86 @@ If it's the first time you launch the container, you need to build extensions. R
 bash build_all.sh
 ```
 
-Later you can execute into the container without re-build.
+### FoundationPose TCP Server
+If all requirements are prepared, you can run 'FoundationPose TCP server' by running shell-script directly!
 ```
-docker exec -it foundationpose bash
+./run_foundationpose.sh
 ```
 
-For more recent GPU such as 4090, refer to [this](https://github.com/NVlabs/FoundationPose/issues/27).
-In short, do the following:
+Then, you can use FoundationPose in any python environment!
+```python
+from FoundationPoseTCP import FoundationPoseTCPServer
+
+client = FoundationPoseTCPClient(server_ip='localhost', port=9999)
+client.connect()
+
+# Initialize FoundationPose module first!
+color, depth, K, mask = <From your own awesome camera module>
+mesh_file = '<MESH FILE PATH>'
+data = {
+    'action': 'initialize'
+    'color': color, # (H,W,3) np.ndarray
+    'depth': depth, # (H,W) np.ndarray
+    'mask': mask,   # (H,W) np.ndarray
+    'K': K,         # (3, 3) np.ndarray, camera intrinsic matrix
+    'mesh_file': mesh_file, # absolute file path in string
+}
+response = client.send(data, verbose=True)
 ```
-docker pull shingarey/foundationpose_custom_cuda121:latest
+```python
+while True:
+    color, depth, K, mask = <From your own awesome camera module>
+    data = {
+        'action': 'inference'
+        'color': color,
+        'depth': depth,
+        'mask': None,
+        'K': K,
+    }
+    response = client.send(data, verbose=False) # dict_keys: T_pose, vis
+    
+    vis = response['vis']
+    cv2.imshow('1', vis[...,::-1])
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('q'):
+        break
 ```
-Then modify the bash script to use this image instead of `foundationpose:latest`.
 
 
 # Env setup option 2: conda (experimental)
 
-- Setup conda environment
+<details><summary> DEPRECATED! </summary>
+  - Setup conda environment
 
-```bash
-# create conda environment
-conda create -n foundationpose python=3.9
+  ```bash
+  # create conda environment
+  conda create -n foundationpose python=3.9
+  
+  # activate conda environment
+  conda activate foundationpose
+  
+  # Install Eigen3 3.4.0 under conda environment
+  conda install conda-forge::eigen=3.4.0
+  export CMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH:/eigen/path/under/conda"
+  
+  # install dependencies
+  python -m pip install -r requirements.txt
+  
+  # Install NVDiffRast
+  python -m pip install --quiet --no-cache-dir git+https://github.com/NVlabs/nvdiffrast.git
+  
+  # Kaolin (Optional, needed if running model-free setup)
+  python -m pip install --quiet --no-cache-dir kaolin==0.15.0 -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.1.0_cu121.html
+  
+  # PyTorch3D
+  python -m pip install --quiet --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py39_cu121_pyt210/download.html
+  
+  # Build extensions
+  CMAKE_PREFIX_PATH=$CONDA_PREFIX/lib/python3.9/site-packages/pybind11/share/cmake/pybind11 bash build_all_conda.sh
+  ```
+</details>
 
-# activate conda environment
-conda activate foundationpose
 
-# Install Eigen3 3.4.0 under conda environment
-conda install conda-forge::eigen=3.4.0
-export CMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH:/eigen/path/under/conda"
-
-# install dependencies
-python -m pip install -r requirements.txt
-
-# Install NVDiffRast
-python -m pip install --quiet --no-cache-dir git+https://github.com/NVlabs/nvdiffrast.git
-
-# Kaolin (Optional, needed if running model-free setup)
-python -m pip install --quiet --no-cache-dir kaolin==0.15.0 -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.1.0_cu121.html
-
-# PyTorch3D
-python -m pip install --quiet --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py39_cu121_pyt210/download.html
-
-# Build extensions
-CMAKE_PREFIX_PATH=$CONDA_PREFIX/lib/python3.9/site-packages/pybind11/share/cmake/pybind11 bash build_all_conda.sh
-```
 
 
 # Run model-based demo
@@ -148,27 +181,6 @@ Feel free to try on other objects (**no need to retrain**) such as driller, by c
 <img src="assets/demo_driller.jpg" width="50%">
 
 
-# Run on public datasets (LINEMOD, YCB-Video)
-
-For this you first need to download LINEMOD dataset and YCB-Video dataset.
-
-To run model-based version on these two datasets respectively, set the paths based on where you download. The results will be saved to `debug` folder
-```
-python run_linemod.py --linemod_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/LINEMOD --use_reconstructed_mesh 0
-
-python run_ycb_video.py --ycbv_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video --use_reconstructed_mesh 0
-```
-
-To run model-free few-shot version. You first need to train Neural Object Field. `ref_view_dir` is based on where you download in the above "Data prepare" section. Set the `dataset` flag to your interested dataset.
-```
-python bundlesdf/run_nerf.py --ref_view_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video/bowen_addon/ref_views_16 --dataset ycbv
-```
-
-Then run the similar command as the model-based version with some small modifications. Here we are using YCB-Video as example:
-```
-python run_ycb_video.py --ycbv_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video --use_reconstructed_mesh 1 --ref_view_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video/bowen_addon/ref_views_16
-```
-
 # Troubleshooting
 
 
@@ -177,40 +189,6 @@ python run_ycb_video.py --ycbv_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DAT
 - For setting up on Windows, refer to [this](https://github.com/NVlabs/FoundationPose/issues/148).
 
 - If you are getting unreasonable results, check [this](https://github.com/NVlabs/FoundationPose/issues/44#issuecomment-2048141043) and [this](https://github.com/030422Lee/FoundationPose_manual)
-
-# Training data download
-Our training data include scenes using 3D assets from GSO and Objaverse, rendered with high quality photo-realism and large domain randomization. Each data point includes **RGB, depth, object pose, camera pose, instance segmentation, 2D bounding box**. [[Google Drive]](https://drive.google.com/drive/folders/1s4pB6p4ApfWMiMjmTXOFco8dHbNXikp-?usp=sharing).
-
-<img src="assets/train_data_vis.png" width="80%">
-
-- To parse the camera params including extrinsics and intrinsics
-  ```
-  glcam_in_cvcam = np.array([[1,0,0,0],
-                          [0,-1,0,0],
-                          [0,0,-1,0],
-                          [0,0,0,1]]).astype(float)
-  W, H = camera_params["renderProductResolution"]
-  with open(f'{base_dir}/camera_params/camera_params_000000.json','r') as ff:
-    camera_params = json.load(ff)
-  world_in_glcam = np.array(camera_params['cameraViewTransform']).reshape(4,4).T
-  cam_in_world = np.linalg.inv(world_in_glcam)@glcam_in_cvcam
-  world_in_cam = np.linalg.inv(cam_in_world)
-  focal_length = camera_params["cameraFocalLength"]
-  horiz_aperture = camera_params["cameraAperture"][0]
-  vert_aperture = H / W * horiz_aperture
-  focal_y = H * focal_length / vert_aperture
-  focal_x = W * focal_length / horiz_aperture
-  center_y = H * 0.5
-  center_x = W * 0.5
-
-  fx, fy, cx, cy = focal_x, focal_y, center_x, center_y
-  K = np.eye(3)
-  K[0,0] = fx
-  K[1,1] = fy
-  K[0,2] = cx
-  K[1,2] = cy
-  ```
-
 
 
 # Notes
@@ -225,7 +203,6 @@ We would like to thank Jeff Smith for helping with the code release; NVIDIA Isaa
 
 # License
 The code and data are released under the NVIDIA Source Code License. Copyright © 2024, NVIDIA Corporation. All rights reserved.
-
 
 # Contact
 For questions, please contact [Bowen Wen](https://wenbowen123.github.io/).
